@@ -743,28 +743,79 @@ def log_ncfm_vgg_comparison_to_tensorboard(writer, ncfm_results_list, ncfm_align
 
 
 def calculate_percentage_differences(results_list, align_methods):
-    """计算百分比差异"""
-    print("\n[Analysis] Percentage Differences:")
-    print("=" * 40)
-
-    baseline_results = results_list[0]  # 第一个方法作为基线
-    baseline_method = align_methods[0]
-
-    for i in range(1, len(results_list)):
-        current_method = align_methods[i]
-        current_results = results_list[i]
-
-        print(f"\n{current_method} vs {baseline_method}:")
-
-        for scenario in ['phase_altered']:  # 重点关注相位变换场景
-            print(f"  {scenario}:")
-            for method in ['ncfm_amplitude', 'ncfm_complex']:
-                if method in baseline_results[scenario] and method in current_results[scenario]:
-                    base_val = baseline_results[scenario][method]
-                    curr_val = current_results[scenario][method]
-                    if base_val > 0:
-                        diff_pct = ((curr_val - base_val) / base_val) * 100
-                        print(f"    {method}: {diff_pct:+.1f}%")
+    """计算百分比差异（简化版，重点展示幅度 vs 相位 vs 复数的量化差异）"""
+    print("\n" + "=" * 80)
+    print("[量化差异分析] 幅度 vs 相位 vs 复数对齐 (±%)")
+    print("=" * 80)
+    
+    # 创建结果字典便于查找
+    results_dict = {method: results for method, results in zip(align_methods, results_list)}
+    
+    scenarios = ['magnitude_altered', 'phase_altered', 'completely_different']
+    scenario_names = {
+        'magnitude_altered': '幅度变换',
+        'phase_altered': '相位变换',
+        'completely_different': '完全不同'
+    }
+    
+    # 简化版：只显示关键场景的关键指标
+    print("\n【简化对比表：关键指标 ±% 差异】")
+    print("=" * 80)
+    
+    diff_summary = []
+    
+    # 场景1：幅度变换 - 对比幅度对齐 vs 复数对齐
+    if 'amplitude' in results_dict and 'both' in results_dict:
+        scenario = 'magnitude_altered'
+        amp_val = results_dict['amplitude'][scenario].get('ncfm_amplitude', None)
+        both_val = results_dict['both'][scenario].get('ncfm_complex', None)
+        if amp_val is not None and both_val is not None and amp_val > 0:
+            diff = ((both_val - amp_val) / amp_val) * 100
+            print(f"\n【场景1】幅度变换:")
+            print(f"  幅度对齐: {amp_val:.6f}")
+            print(f"  复数对齐: {both_val:.6f}")
+            print(f"  差异: {diff:+.1f}% ({'更好' if diff < 0 else '更差'})")
+            diff_summary.append(('幅度变换', '幅度→复数', diff))
+    
+    # 场景2：相位变换 - 对比相位对齐 vs 复数对齐
+    if 'phase' in results_dict and 'both' in results_dict:
+        scenario = 'phase_altered'
+        phase_val = results_dict['phase'][scenario].get('ncfm_phase', None)
+        both_val = results_dict['both'][scenario].get('ncfm_complex', None)
+        if phase_val is not None and both_val is not None and phase_val > 0:
+            diff = ((both_val - phase_val) / phase_val) * 100
+            print(f"\n【场景2】相位变换:")
+            print(f"  相位对齐: {phase_val:.6f}")
+            print(f"  复数对齐: {both_val:.6f}")
+            print(f"  差异: {diff:+.1f}% ({'更好' if diff < 0 else '更差'})")
+            diff_summary.append(('相位变换', '相位→复数', diff))
+    
+    # 场景3：完全不同 - 对比相位对齐 vs 复数对齐
+    if 'phase' in results_dict and 'both' in results_dict:
+        scenario = 'completely_different'
+        phase_val = results_dict['phase'][scenario].get('ncfm_phase', None)
+        both_val = results_dict['both'][scenario].get('ncfm_complex', None)
+        if phase_val is not None and both_val is not None and phase_val > 0:
+            diff = ((both_val - phase_val) / phase_val) * 100
+            print(f"\n【场景3】完全不同:")
+            print(f"  相位对齐: {phase_val:.6f}")
+            print(f"  复数对齐: {both_val:.6f}")
+            print(f"  差异: {diff:+.1f}% ({'更好' if diff < 0 else '更差'})")
+            diff_summary.append(('完全不同', '相位→复数', diff))
+    
+    # 总结表格
+    print("\n" + "=" * 80)
+    print("【量化差异总结表】")
+    print("=" * 80)
+    print(f"{'场景':<15} {'对比':<15} {'差异(%)':<15} {'结论':<20}")
+    print("-" * 80)
+    for scenario, comparison, diff in diff_summary:
+        conclusion = '复数对齐更好' if diff < 0 else '复数对齐更差'
+        print(f"{scenario:<15} {comparison:<15} {diff:+.1f}%{'':<10} {conclusion:<20}")
+    
+    print("\n" + "=" * 80)
+    
+    return diff_summary
 
 
 def create_additional_visualizations(results_list, align_methods, output_dir):
@@ -875,8 +926,25 @@ def main():
         if writer is not None:
             log_comparison_to_tensorboard(writer, all_results, align_methods)
 
-        # 计算百分比差异
-        calculate_percentage_differences(all_results, align_methods)
+        # 计算百分比差异（量化差异分析）
+        diff_summary = calculate_percentage_differences(all_results, align_methods)
+        
+        # 保存量化差异结果到文件
+        if diff_summary:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            diff_file = os.path.join(args.output_dir, f'quantitative_differences_{timestamp}.txt')
+            with open(diff_file, 'w', encoding='utf-8') as f:
+                f.write("NCFM V3 量化差异分析报告\n")
+                f.write("=" * 80 + "\n\n")
+                f.write("幅度 vs 相位 vs 复数对齐的量化差异 (±%)\n\n")
+                f.write(f"{'场景':<15} {'对比':<15} {'差异(%)':<15} {'结论':<20}\n")
+                f.write("-" * 80 + "\n")
+                for scenario, comparison, diff in diff_summary:
+                    conclusion = '复数对齐更好' if diff < 0 else '复数对齐更差'
+                    f.write(f"{scenario:<15} {comparison:<15} {diff:+.1f}%{'':<10} {conclusion:<20}\n")
+                f.write("\n" + "=" * 80 + "\n")
+                f.write("\n说明：负值表示复数对齐更好（损失值更低），正值表示复数对齐更差。\n")
+            print(f"\n[量化差异] 结果已保存到: {diff_file}")
 
         # 创建额外的可视化图表
         create_additional_visualizations(all_results, align_methods, args.output_dir)
